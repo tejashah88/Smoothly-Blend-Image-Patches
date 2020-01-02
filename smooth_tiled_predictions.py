@@ -23,6 +23,11 @@ if __name__ == '__main__':
 else:
     PLOT_PROGRESS = False
 
+def recursive_expand_dims(arr, n):
+    if arr.ndim == n:
+        return arr
+    new_arr = np.expand_dims(arr, arr.ndim)
+    return recursive_expand_dims(new_arr, n)
 
 def _spline_window(window_size, power=2):
     """
@@ -56,7 +61,7 @@ def _window_2D(window_size, power=2):
         wind = cached_2d_windows[key]
     else:
         wind = _spline_window(window_size, power)
-        wind = np.expand_dims(np.expand_dims(wind, 3), 3)
+        wind = recursive_expand_dims(wind, 3)
         wind = wind * wind.transpose(1, 0, 2)
         if PLOT_PROGRESS:
             # For demo purpose, let's look once at the window:
@@ -171,7 +176,7 @@ def _windowed_subdivs(padded_img, window_size, subdivisions, nb_classes, pred_fu
 
     for i in range(0, padx_len-window_size+1, step):
         subdivs.append([])
-        for j in range(0, padx_len-window_size+1, step):
+        for j in range(0, pady_len-window_size+1, step):
             patch = padded_img[i:i+window_size, j:j+window_size, :]
             subdivs[-1].append(patch)
 
@@ -209,7 +214,7 @@ def _recreate_from_subdivs(subdivs, window_size, subdivisions, padded_out_shape)
     a = 0
     for i in range(0, padx_len-window_size+1, step):
         b = 0
-        for j in range(0, padx_len-window_size+1, step):
+        for j in range(0, pady_len-window_size+1, step):
             windowed_patch = subdivs[a, b]
             y[i:i+window_size, j:j+window_size] = y[i:i+window_size, j:j+window_size] + windowed_patch
             b += 1
@@ -302,11 +307,7 @@ def get_dummy_img(xy_size=128, nb_channels=3):
     """
     x = np.random.random((xy_size, xy_size, nb_channels))
     x = x + np.ones((xy_size, xy_size, 1))
-    lin = np.expand_dims(
-        np.expand_dims(
-            np.linspace(0, 1, xy_size),
-            nb_channels),
-        nb_channels)
+    lin = recursive_expand_dims(np.linspace(0, 1, xy_size), nb_channels)
     x = x * lin
     x = x * lin.transpose(1, 0, 2)
     x = x + x[::-1, ::-1, :]
@@ -318,6 +319,10 @@ def get_dummy_img(xy_size=128, nb_channels=3):
         plt.title("Random image for a test")
         plt.show()
     return x
+
+def get_dummy_img_rect(x_size=128, y_size=128, nb_channels=3):
+    max_square_img = get_dummy_img(max(x_size, y_size), nb_channels=3)
+    return max_square_img[0:y_size, 0:x_size,:]
 
 
 def round_predictions(prd, nb_channels_out, thresholds):
@@ -339,12 +344,13 @@ if __name__ == '__main__':
     # Image:
     ###
 
-    img_resolution = 600
+    img_resolution = 512
     # 3 such as RGB, but there could be more in other cases:
     nb_channels_in = 3
 
     # Get an image
-    input_img = get_dummy_img(img_resolution, nb_channels_in)
+    # input_img = get_dummy_img(img_resolution, nb_channels_in)
+    input_img = get_dummy_img_rect(img_resolution * 2, img_resolution * 3, nb_channels_in)
     # Normally, preprocess the image for input in the neural net:
     # input_img = to_neural_input(input_img)
 
@@ -356,7 +362,7 @@ if __name__ == '__main__':
     nb_channels_out = 3
     # U-Net's receptive field border size, it does not absolutely
     # need to be a divisor of "img_resolution":
-    window_size = 128
+    window_size = 256
 
     # This here would be the neural network's predict function, to used below:
     def predict_for_patches(small_img_patches):
