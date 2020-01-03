@@ -152,6 +152,25 @@ def _rotate_mirror_undo(im_mirrs):
     return np.mean(origs, axis=0)
 
 
+def _rotate_mirror_undo_faster(im_mirrs):
+    """
+    merges a list of 8 np arrays (images) of shape (x, y, nb_channels) generated
+    from the `_rotate_mirror_do` function. Each images might have changed and
+    merging them implies to rotated them back in order and average things out.
+
+    It is the D_4 (D4) Dihedral group:
+    https://en.wikipedia.org/wiki/Dihedral_group
+    """
+    orig = np.array(im_mirrs[0])
+    orig += np.rot90(np.array(im_mirrs[1]), axes=(0, 1), k=3)
+    orig += np.rot90(np.array(im_mirrs[2]), axes=(0, 1), k=2)
+    orig += np.rot90(np.array(im_mirrs[3]), axes=(0, 1), k=1)
+    orig += np.array(im_mirrs[4])[:, ::-1]
+    orig += np.rot90(np.array(im_mirrs[5]), axes=(0, 1), k=3)[:, ::-1]
+    orig += np.rot90(np.array(im_mirrs[6]), axes=(0, 1), k=2)[:, ::-1]
+    orig += np.rot90(np.array(im_mirrs[7]), axes=(0, 1), k=1)[:, ::-1]
+    return orig / 8
+
 
 def _get_smoothed_predictions(padded_img, window_size, subdivisions, nb_classes, pred_func):
     WINDOW_SPLINE_2D = _window_2D(window_size=window_size, power=2)
@@ -302,7 +321,7 @@ def predict_img_with_smooth_windowing(input_img, window_size, subdivisions, nb_c
         res.append(one_padded_result)
 
     # Merge after rotations:
-    padded_results = _rotate_mirror_undo(res)
+    padded_results = _rotate_mirror_undo_faster(res)
 
     prd = _unpad_img(padded_results, window_size, subdivisions)
 
@@ -325,7 +344,7 @@ def cheap_tiling_prediction(img, window_size, nb_classes, pred_func):
     tmp = np.zeros((full_border, full_border, original_shape[-1]))
     tmp[:original_shape[0], :original_shape[1], :] = img
     img = tmp
-    print(img.shape, tmp.shape, prd.shape)
+    # print(img.shape, tmp.shape, prd.shape)
     for i in tqdm(range(0, prd.shape[0], window_size)):
         for j in range(0, prd.shape[0], window_size):
             im = img[i:i+window_size, j:j+window_size]
