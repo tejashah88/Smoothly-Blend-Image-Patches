@@ -29,6 +29,7 @@ def recursive_expand_dims(arr, n):
     new_arr = np.expand_dims(arr, arr.ndim)
     return recursive_expand_dims(new_arr, n)
 
+
 def _spline_window(window_size, power=2):
     """
     Squared spline (power=2) window function:
@@ -151,6 +152,40 @@ def _rotate_mirror_undo(im_mirrs):
     return np.mean(origs, axis=0)
 
 
+
+def _get_smoothed_predictions(padded_img, window_size, subdivisions, nb_classes, pred_func):
+    WINDOW_SPLINE_2D = _window_2D(window_size=window_size, power=2)
+
+    step = int(window_size/subdivisions)
+    padx_len = padded_img.shape[0]
+    pady_len = padded_img.shape[1]
+    subdivs = []
+
+    for i in range(0, padx_len-window_size+1, step):
+        for j in range(0, pady_len-window_size+1, step):
+            patch = padded_img[i:i+window_size, j:j+window_size, :]
+            subdivs.append(patch)
+
+    subdivs = np.array(subdivs)
+    gc.collect()
+
+    subdivs = pred_func(subdivs)
+    gc.collect()
+    subdivs = np.array([patch * WINDOW_SPLINE_2D for patch in subdivs])
+    gc.collect()
+
+    output_shape = (*padded_img.shape[0:2], nb_classes)
+    y = np.zeros(output_shape)
+
+    count = 0
+    for i in range(0, padx_len-window_size+1, step):
+        for j in range(0, pady_len-window_size+1, step):
+            windowed_patch = subdivs[count]
+            count += 1
+            y[i:i+window_size, j:j+window_size] = y[i:i+window_size, j:j+window_size] + windowed_patch
+    return y / (subdivisions ** 2)
+
+
 def _windowed_subdivs(padded_img, window_size, subdivisions, nb_classes, pred_func):
     """
     Create tiled overlapping patches.
@@ -255,10 +290,14 @@ def predict_img_with_smooth_windowing(input_img, window_size, subdivisions, nb_c
     res = []
     for pad in tqdm(pads):
         # For every rotation:
-        sd = _windowed_subdivs(pad, window_size, subdivisions, nb_classes, pred_func)
-        one_padded_result = _recreate_from_subdivs(
-            sd, window_size, subdivisions,
-            padded_out_shape=list(pad.shape[:-1])+[nb_classes])
+        # sd = _windowed_subdivs(pad, window_size, subdivisions, nb_classes, pred_func)
+        # one_padded_result = _recreate_from_subdivs(
+        #     sd, window_size, subdivisions,
+        #     padded_out_shape=list(pad.shape[:-1])+[nb_classes])
+
+        one_padded_result = _get_smoothed_predictions(
+            pad, window_size, subdivisions, nb_classes, pred_func,
+        )
 
         res.append(one_padded_result)
 
@@ -350,7 +389,7 @@ if __name__ == '__main__':
 
     # Get an image
     # input_img = get_dummy_img(img_resolution, nb_channels_in)
-    input_img = get_dummy_img_rect(img_resolution * 2, img_resolution * 3, nb_channels_in)
+    input_img = get_dummy_img_rect(1024, 1536, nb_channels_in)
     # Normally, preprocess the image for input in the neural net:
     # input_img = to_neural_input(input_img)
 
